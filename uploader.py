@@ -11,8 +11,8 @@ CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 REFRESH_TOKEN = os.environ.get("REFRESH_TOKEN")
 
-# Agar secret se na mile to direct key use karein
-GDRIVE_API_KEY = os.environ.get("GDRIVE_API_KEY") or "AIzaSyAxOxhwrfRksE370_eVuDzQKu5aUQ3Ft4o"
+# Nayi API Key yahan set hai
+GDRIVE_API_KEY = os.environ.get("GDRIVE_API_KEY") or "AIzaSyCkWp_GArZQkaSPsGhN-mP-1rhVIikTBYQ"
 
 TRACKER_FILE = "uploaded.json"
 FOLDER_ID = "1nbXalCCa3umvQmrhzRogjvnSz-zMYfHj"
@@ -38,7 +38,7 @@ else:
 
 print("Fetching folder items directly via Google Drive API...")
 
-# Direct REST call without googleapiclient build()
+# Direct REST call
 list_url = "https://www.googleapis.com/drive/v3/files"
 params = {
     "q": f"'{FOLDER_ID}' in parents and trashed = false",
@@ -68,7 +68,7 @@ for item in items:
     if any(ign in lower_name for ign in ignored_names):
         continue
 
-    # Shortcut check
+    # Shortcut checking
     if item.get('mimeType') == 'application/vnd.google-apps.shortcut':
         shortcut_details = item.get('shortcutDetails', {})
         target_id = shortcut_details.get('targetId')
