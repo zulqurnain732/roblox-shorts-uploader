@@ -10,11 +10,14 @@ from googleapiclient.http import MediaFileUpload
 CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 REFRESH_TOKEN = os.environ.get("REFRESH_TOKEN")
-GDRIVE_API_KEY = os.environ.get("GDRIVE_API_KEY")
+
+# Agar secret se na mile to direct key use karein
+GDRIVE_API_KEY = os.environ.get("GDRIVE_API_KEY") or "AIzaSyAxOxhwrfRksE370_eVuDzQKu5aUQ3Ft4o"
 
 TRACKER_FILE = "uploaded.json"
 FOLDER_ID = "1nbXalCCa3umvQmrhzRogjvnSz-zMYfHj"
 
+# YouTube Auth
 creds = Credentials(
     None,
     refresh_token=REFRESH_TOKEN,
@@ -23,7 +26,6 @@ creds = Credentials(
     client_secret=CLIENT_SECRET
 )
 youtube_service = build('youtube', 'v3', credentials=creds)
-drive_service = build('drive', 'v3', developerKey=GDRIVE_API_KEY)
 
 if os.path.exists(TRACKER_FILE):
     try:
@@ -34,15 +36,25 @@ if os.path.exists(TRACKER_FILE):
 else:
     uploaded_files = set()
 
-print("Fetching folder items via Google Drive API...")
-query = f"'{FOLDER_ID}' in parents and trashed = false"
-response = drive_service.files().list(
-    q=query,
-    pageSize=100,
-    fields="files(id, name, mimeType, shortcutDetails)"
-).execute()
+print("Fetching folder items directly via Google Drive API...")
 
-items = response.get('files', [])
+# Direct REST call without googleapiclient build()
+list_url = "https://www.googleapis.com/drive/v3/files"
+params = {
+    "q": f"'{FOLDER_ID}' in parents and trashed = false",
+    "pageSize": 100,
+    "fields": "files(id, name, mimeType, shortcutDetails)",
+    "key": GDRIVE_API_KEY
+}
+
+resp = requests.get(list_url, params=params)
+if resp.status_code != 200:
+    print(f"Error fetching files from Drive: {resp.status_code} - {resp.text}")
+    exit(1)
+
+data = resp.json()
+items = data.get('files', [])
+
 ignored_names = ["1m $ earning", "400  free reels bundle", "4000 free courses"]
 
 def extract_number(filename):
@@ -56,6 +68,7 @@ for item in items:
     if any(ign in lower_name for ign in ignored_names):
         continue
 
+    # Shortcut check
     if item.get('mimeType') == 'application/vnd.google-apps.shortcut':
         shortcut_details = item.get('shortcutDetails', {})
         target_id = shortcut_details.get('targetId')
@@ -86,7 +99,9 @@ print("Downloading video stream...")
 
 download_url = f"https://www.googleapis.com/drive/v3/files/{target_id}?alt=media&key={GDRIVE_API_KEY}"
 with requests.get(download_url, stream=True) as r:
-    r.raise_for_status()
+    if r.status_code != 200:
+        print(f"Failed to download video stream: {r.status_code} - {r.text}")
+        exit(1)
     with open(local_video_file, 'wb') as f:
         for chunk in r.iter_content(chunk_size=1024 * 1024):
             if chunk:
@@ -144,4 +159,3 @@ with open(TRACKER_FILE, "w") as f:
 
 if os.path.exists(local_video_file):
     os.remove(local_video_file)
-    
