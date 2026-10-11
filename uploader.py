@@ -78,14 +78,17 @@ for item in items:
         valid_videos.append({'name': name, 'id': item['id']})
 
 valid_videos.sort(key=lambda x: extract_number(x['name']))
+
+# Check agar sari 98 videos complete ho chuki hain
 pending_videos = [v for v in valid_videos if v['name'] not in uploaded_files]
+
+if not pending_videos:
+    print("Sabhi videos complete upload ho chuki hain! Cycle reset ki ja rahi hai...")
+    uploaded_files.clear()
+    pending_videos = list(valid_videos)
 
 print(f"Total video shortcuts found: {len(valid_videos)}")
 print(f"Pending to upload: {len(pending_videos)}")
-
-if not pending_videos:
-    print("Koi nayi video pending nahi hai!")
-    exit(0)
 
 target = pending_videos[0]
 target_name = target['name']
