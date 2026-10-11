@@ -2,6 +2,7 @@ import os
 import re
 import json
 import random
+import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -11,7 +12,7 @@ CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 REFRESH_TOKEN = os.environ.get("REFRESH_TOKEN")
 TRACKER_FILE = "uploaded.json"
-FOLDER_URL = "https://drive.google.com/drive/folders/1nbXalCCa3umvQmrhzRogjvnSz-zMYfHj"
+FOLDER_ID = "1nbXalCCa3umvQmrhzRogjvnSz-zMYfHj"
 
 creds = Credentials(
     None,
@@ -29,39 +30,45 @@ if os.path.exists(TRACKER_FILE):
 else:
     uploaded_files = set()
 
-download_dir = "downloaded_videos"
-os.makedirs(download_dir, exist_ok=True)
-print("Google Drive se folder fetch kiya ja raha hai...")
-gdown.download_folder(FOLDER_URL, output=download_dir, quiet=True, use_cookies=False)
+# Public folder se items list karna
+folder_url = f"https://drive.google.com/drive/folders/{FOLDER_ID}"
+res = requests.get(folder_url)
+html = res.text
 
-ignored_patterns = ["1m $ earning", "400  free reels bundle", "4000 free courses"]
+# Extract files info from public drive folder
+matches = re.findall(r'\["([-\w]{25,})",\["([^"]+\.mp4)"', html)
+if not matches:
+    matches = re.findall(r'\["([-\w]{25,})",\["(Copy of \d+\.mp4)"', html)
+
+files_map = {}
+for file_id, name in matches:
+    if name not in files_map:
+        files_map[name] = file_id
 
 def extract_number(filename):
     nums = re.findall(r'\d+', filename)
     return int(nums[0]) if nums else 999999
 
-all_files = []
-for root, _, files in os.walk(download_dir):
-    for f in files:
-        if not f.lower().endswith(".mp4"):
-            continue
-        lower_name = f.lower()
-        if any(ign in lower_name for ign in ignored_patterns):
-            continue
-        all_files.append((f, os.path.join(root, f)))
+# Sort files sequentially: Copy of 1.mp4, Copy of 2.mp4...
+sorted_items = sorted(files_map.items(), key=lambda x: extract_number(x[0]))
+pending_items = [item for item in sorted_items if item[0] not in uploaded_files]
 
-all_files.sort(key=lambda x: extract_number(x[0]))
-
-pending_files = [item for item in all_files if item[0] not in uploaded_files]
-
-if not pending_files:
-    print("Saari videos upload ho chuki hain! Koi nayi video baki nahi hai.")
+if not pending_items:
+    print("Koi nayi video pending nahi hai ya saari upload ho chuki hain.")
     exit(0)
 
-# Har run me sirf 1 video
-target_file_name, target_file_path = pending_files[0]
-print(f"Baqi bache videos: {len(pending_files)}")
-print(f"Abhi upload ho raha hai: {target_file_name}")
+target_name, target_id = pending_items[0]
+print(f"Target Video mil gayi: {target_name} (ID: {target_id})")
+
+# Sirf ye single video download karein
+temp_video_path = "current_video.mp4"
+download_url = f"https://drive.google.com/uc?id={target_id}"
+print("Video download ho rahi hai...")
+gdown.download(download_url, temp_video_path, quiet=False)
+
+if not os.path.exists(temp_video_path) or os.path.getsize(temp_video_path) == 0:
+    print("Download fail ho gaya, Google Drive link check karein.")
+    exit(1)
 
 roblox_titles = [
     "Most Insane Roblox Moment! 😱 #roblox #shorts",
@@ -96,18 +103,22 @@ body = {
     }
 }
 
-print(f"Uploading to YouTube: {title}")
-media = MediaFileUpload(target_file_path, chunksize=-1, resumable=True, mimetype='video/mp4')
+print(f"YouTube par upload shuru: {title}")
+media = MediaFileUpload(temp_video_path, chunksize=-1, resumable=True, mimetype='video/mp4')
 response = youtube_service.videos().insert(
     part=','.join(body.keys()),
     body=body,
     media_body=media
 ).execute()
 
-print(f"Direct Public Upload Successful! Video ID: {response.get('id')}")
+print(f"Upload complete! Video ID: {response.get('id')}")
 
-# Tracker update karein
-uploaded_files.add(target_file_name)
+# Clean up
+if os.path.exists(temp_video_path):
+    os.remove(temp_video_path)
+
+# Tracker update
+uploaded_files.add(target_name)
 with open(TRACKER_FILE, "w") as f:
     json.dump(list(uploaded_files), f, indent=2)
     
