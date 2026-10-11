@@ -2,11 +2,10 @@ import os
 import re
 import json
 import random
-import requests
+import subprocess
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-import gdown
 
 CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
@@ -25,50 +24,55 @@ creds = Credentials(
 youtube_service = build('youtube', 'v3', credentials=creds)
 
 if os.path.exists(TRACKER_FILE):
-    with open(TRACKER_FILE, "r") as f:
-        uploaded_files = set(json.load(f))
+    try:
+        with open(TRACKER_FILE, "r") as f:
+            uploaded_files = set(json.load(f))
+    except Exception:
+        uploaded_files = set()
 else:
     uploaded_files = set()
 
-# Public folder se items list karna
-folder_url = f"https://drive.google.com/drive/folders/{FOLDER_ID}"
-res = requests.get(folder_url)
-html = res.text
+# Download directory setup
+os.makedirs("downloads", exist_ok=True)
 
-# Extract files info from public drive folder
-matches = re.findall(r'\["([-\w]{25,})",\["([^"]+\.mp4)"', html)
-if not matches:
-    matches = re.findall(r'\["([-\w]{25,})",\["(Copy of \d+\.mp4)"', html)
+# Google Drive public folder se files download karne ke liye gdown direct call
+print("Checking and downloading Google Drive files...")
+subprocess.run([
+    "gdown",
+    f"https://drive.google.com/drive/folders/{FOLDER_ID}",
+    "-O", "downloads/",
+    "--folder",
+    "--remaining-ok"
+], check=False)
 
-files_map = {}
-for file_id, name in matches:
-    if name not in files_map:
-        files_map[name] = file_id
+ignored_patterns = ["1m $ earning", "400  free reels bundle", "4000 free courses"]
 
 def extract_number(filename):
     nums = re.findall(r'\d+', filename)
     return int(nums[0]) if nums else 999999
 
-# Sort files sequentially: Copy of 1.mp4, Copy of 2.mp4...
-sorted_items = sorted(files_map.items(), key=lambda x: extract_number(x[0]))
-pending_items = [item for item in sorted_items if item[0] not in uploaded_files]
+all_found = []
+for root, _, files in os.walk("downloads"):
+    for f in files:
+        if not f.lower().endswith(".mp4"):
+            continue
+        lower_name = f.lower()
+        if any(ign in lower_name for ign in ignored_patterns):
+            continue
+        all_found.append((f, os.path.join(root, f)))
 
-if not pending_items:
-    print("Koi nayi video pending nahi hai ya saari upload ho chuki hain.")
+all_found.sort(key=lambda x: extract_number(x[0]))
+pending = [item for item in all_found if item[0] not in uploaded_files]
+
+print(f"Total milne wale videos: {len(all_found)}")
+print(f"Baqi bache hue videos: {len(pending)}")
+
+if not pending:
+    print("Koi nayi video upload ke liye nahi mili!")
     exit(0)
 
-target_name, target_id = pending_items[0]
-print(f"Target Video mil gayi: {target_name} (ID: {target_id})")
-
-# Sirf ye single video download karein
-temp_video_path = "current_video.mp4"
-download_url = f"https://drive.google.com/uc?id={target_id}"
-print("Video download ho rahi hai...")
-gdown.download(download_url, temp_video_path, quiet=False)
-
-if not os.path.exists(temp_video_path) or os.path.getsize(temp_video_path) == 0:
-    print("Download fail ho gaya, Google Drive link check karein.")
-    exit(1)
+target_name, target_path = pending[0]
+print(f"Abhi upload ho rahi hai: {target_name}")
 
 roblox_titles = [
     "Most Insane Roblox Moment! 😱 #roblox #shorts",
@@ -103,22 +107,21 @@ body = {
     }
 }
 
-print(f"YouTube par upload shuru: {title}")
-media = MediaFileUpload(temp_video_path, chunksize=-1, resumable=True, mimetype='video/mp4')
+print(f"YouTube par upload jaari hai: {title}")
+media = MediaFileUpload(target_path, chunksize=-1, resumable=True, mimetype='video/mp4')
 response = youtube_service.videos().insert(
     part=','.join(body.keys()),
     body=body,
     media_body=media
 ).execute()
 
-print(f"Upload complete! Video ID: {response.get('id')}")
+print(f"Success! Video upload ho chuki hai. Video ID: {response.get('id')}")
 
-# Clean up
-if os.path.exists(temp_video_path):
-    os.remove(temp_video_path)
-
-# Tracker update
+# Tracker file update
 uploaded_files.add(target_name)
 with open(TRACKER_FILE, "w") as f:
     json.dump(list(uploaded_files), f, indent=2)
-    
+
+# File delete karein taaki storage clean rahe
+if os.path.exists(target_path):
+    os.remove(target_path)
