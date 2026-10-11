@@ -34,7 +34,6 @@ os.makedirs(download_dir, exist_ok=True)
 print("Google Drive se folder fetch kiya ja raha hai...")
 gdown.download_folder(FOLDER_URL, output=download_dir, quiet=True, use_cookies=False)
 
-# Ignore folders and PDFs
 ignored_patterns = ["1m $ earning", "400  free reels bundle", "4000 free courses"]
 
 def extract_number(filename):
@@ -55,9 +54,14 @@ all_files.sort(key=lambda x: extract_number(x[0]))
 
 pending_files = [item for item in all_files if item[0] not in uploaded_files]
 
-to_upload = pending_files[:10]
-print(f"Total bache hue videos: {len(pending_files)}")
-print(f"Aaj upload hone wale videos: {len(to_upload)}")
+if not pending_files:
+    print("Saari videos upload ho chuki hain! Koi nayi video baki nahi hai.")
+    exit(0)
+
+# Har run me sirf 1 video
+target_file_name, target_file_path = pending_files[0]
+print(f"Baqi bache videos: {len(pending_files)}")
+print(f"Abhi upload ho raha hai: {target_file_name}")
 
 roblox_titles = [
     "Most Insane Roblox Moment! 😱 #roblox #shorts",
@@ -79,32 +83,31 @@ Subscribe for more daily Roblox Shorts and gaming moments.
 
 tags_list = ["roblox", "roblox shorts", "roblox funny moments", "gaming", "shorts", "roblox gameplay", "trending"]
 
-for file_name, file_path in to_upload:
-    title = random.choice(roblox_titles)
-    body = {
-        'snippet': {
-            'title': title,
-            'description': description_text,
-            'tags': tags_list,
-            'categoryId': '20'
-        },
-        'status': {
-            'privacyStatus': 'public'
-        }
+title = random.choice(roblox_titles)
+body = {
+    'snippet': {
+        'title': title,
+        'description': description_text,
+        'tags': tags_list,
+        'categoryId': '20'
+    },
+    'status': {
+        'privacyStatus': 'public'
     }
+}
 
-    print(f"\nUploading: {file_name}")
-    media = MediaFileUpload(file_path, chunksize=-1, resumable=True, mimetype='video/mp4')
-    response = youtube_service.videos().insert(
-        part=','.join(body.keys()),
-        body=body,
-        media_body=media
-    ).execute()
+print(f"Uploading to YouTube: {title}")
+media = MediaFileUpload(target_file_path, chunksize=-1, resumable=True, mimetype='video/mp4')
+response = youtube_service.videos().insert(
+    part=','.join(body.keys()),
+    body=body,
+    media_body=media
+).execute()
 
-    print(f"Uploaded successfully! Video ID: {response.get('id')}")
-    uploaded_files.add(file_name)
+print(f"Direct Public Upload Successful! Video ID: {response.get('id')}")
 
+# Tracker update karein
+uploaded_files.add(target_file_name)
 with open(TRACKER_FILE, "w") as f:
     json.dump(list(uploaded_files), f, indent=2)
-
-print("\nAaj ke 10 videos complete upload ho chuke hain.")
+    
